@@ -1,16 +1,15 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
+import androidx.compose.material.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import kotlinx.coroutines.*
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Image
@@ -55,12 +54,38 @@ fun compressImage(inputFile: File, outputFile: File, targetSizeKb: Int = 120, ta
     outputFile.writeBytes(compressed)
 }
 
-fun processImages(files: List<File>, saveFolder: File, targetSizeKb: Int = 120, targetWidth: Int = 640) {
-    files.forEach { file ->
-        val outputFile = File(saveFolder, "compressed_${file.name}")
-        compressImage(file, outputFile, targetSizeKb, targetWidth)
-        println("Сжатие завершено для файла: ${file.name}, результат: ${outputFile.name}")
+suspend fun processImages(
+    files: List<File>,
+    saveFolder: File,
+    targetSizeKb: Int = 120,
+    targetWidth: Int = 640,
+    onProgress: (Float) -> Unit,
+    onError: (String) -> Unit
+) {
+    try {
+        files.forEachIndexed { index, file ->
+            val outputFile = File(saveFolder, "compressed_${file.name}")
+            compressImage(file, outputFile, targetSizeKb, targetWidth)
+            onProgress((index + 1).toFloat() / files.size) // Обновляем прогресс
+            delay(200) // имитация времени обработки для наглядности
+        }
+    } catch (e: Exception) {
+        onError("Ошибка при обработке файлов: ${e.message}")
     }
+}
+
+@Composable
+fun ErrorDialog(errorMessage: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ошибка") },
+        text = { Text(errorMessage) },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("ОК")
+            }
+        }
+    )
 }
 
 @Composable
@@ -69,41 +94,85 @@ fun App() {
     var selectedImages by remember { mutableStateOf<List<File>>(emptyList()) }
     var saveFolder by remember { mutableStateOf<File?>(null) }
     var message by remember { mutableStateOf("Выберите фотографии и папку для сохранения.") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isProcessing by remember { mutableStateOf(false) }
+    var progress by remember { mutableStateOf(0f) }
 
     MaterialTheme {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Button(onClick = {
-                val files = chooseImages()
-                if (files.isNotEmpty()) {
-                    selectedImages = files
-                    message = "Выбрано ${files.size} фотографий."
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Button(onClick = {
+                    val files = chooseImages()
+                    if (files.isNotEmpty()) {
+                        selectedImages = files
+                        message = "Выбрано ${files.size} фотографий."
+                    }
+                }) {
+                    Text("Выбрать фотографии")
                 }
-            }) {
-                Text("Выбрать фотографии")
-            }
 
-            Button(onClick = {
-                val folder = chooseFolder()
-                if (folder != null) {
-                    saveFolder = folder
-                    message = "Выбрана папка для сохранения: ${folder.path}."
+                Button(onClick = {
+                    val folder = chooseFolder()
+                    if (folder != null) {
+                        saveFolder = folder
+                        message = "Выбрана папка для сохранения: ${folder.path}."
+                    }
+                }, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("Выбрать папку для сохранения")
                 }
-            }, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Выбрать папку для сохранения")
-            }
 
-            Button(onClick = {
-                if (selectedImages.isNotEmpty() && saveFolder != null) {
-                    processImages(selectedImages, saveFolder!!)
-                    message = "Обработка завершена!"
+                Button(
+                    onClick = {
+                        if (selectedImages.isEmpty()) {
+                            errorMessage = "Не выбраны фотографии для обработки."
+                        } else if (saveFolder == null) {
+                            errorMessage = "Не выбрана папка для сохранения."
+                        } else {
+                            isProcessing = true
+                            CoroutineScope(Dispatchers.Default).launch {
+                                processImages(
+                                    selectedImages,
+                                    saveFolder!!,
+                                    onProgress = { p ->
+                                        progress = p
+                                    },
+                                    onError = { error ->
+                                        errorMessage = error
+                                        isProcessing = false
+                                    }
+                                )
+                                isProcessing = false
+                                message = "Обработка завершена!"
+                            }
+                        }
+                    },
+                    enabled = !isProcessing,
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Text("Запустить обработку")
+                }
+
+                if (isProcessing) {
+                    LinearProgressIndicator(
+                        progress = progress,
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                    )
+                    BasicText("Обработка: ${(progress * 100).toInt()}%", modifier = Modifier.padding(top = 8.dp))
                 } else {
-                    message = "Выберите фотографии и папку для сохранения."
+                    BasicText(text = message, modifier = Modifier.padding(top = 16.dp))
                 }
-            }, modifier = Modifier.padding(top = 8.dp)) {
-                Text("Запустить обработку")
-            }
 
-            BasicText(text = message, modifier = Modifier.padding(top = 16.dp))
+                errorMessage?.let { error ->
+                    ErrorDialog(errorMessage = error) {
+                        errorMessage = null
+                    }
+                }
+            }
         }
     }
 }

@@ -29,7 +29,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe) // Для Windows .exe
             packageName = "ImageOptimizator"
-            packageVersion = "0.0.2"
+            packageVersion = "0.0.3"
         }
     }
 }
