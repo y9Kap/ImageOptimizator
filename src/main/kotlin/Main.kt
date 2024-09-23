@@ -66,8 +66,8 @@ suspend fun processImages(
         files.forEachIndexed { index, file ->
             val outputFile = File(saveFolder, "compressed_${file.name}")
             compressImage(file, outputFile, targetSizeKb, targetWidth)
-            onProgress((index + 1).toFloat() / files.size) // Обновляем прогресс
-            delay(200) // имитация времени обработки для наглядности
+            onProgress((index + 1).toFloat() / files.size)
+            delay(200)
         }
     } catch (e: Exception) {
         onError("Ошибка при обработке файлов: ${e.message}")
