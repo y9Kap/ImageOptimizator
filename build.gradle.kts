@@ -25,11 +25,15 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "MainKt" // Укажите путь к вашему main классу
+        mainClass = "MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Exe) // Для Windows .exe
+            windows {
+                iconFile.set(File("E:\\Programming\\ImageComposeOptimizator\\src\\main\\resources\\Logo.ico"))
+            }
+            targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ImageOptimizator"
-            packageVersion = "0.0.3"
+            packageVersion = "0.0.5"
         }
     }
 }
+

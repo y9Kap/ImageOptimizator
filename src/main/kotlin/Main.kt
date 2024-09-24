@@ -203,7 +203,7 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "ImageOptimizator",
-        icon = painterResource("Logo.jpg")
+        icon = painterResource("Logo.ico")
     ) {
         App()
     }
