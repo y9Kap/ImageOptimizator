@@ -3,6 +3,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -97,15 +98,39 @@ fun App() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
+    var targetWidth by rememberSaveable { mutableStateOf("640") }
+    var targetSizeKb by rememberSaveable { mutableStateOf("120") }
 
     MaterialTheme {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(10.dp),
             contentAlignment = Alignment.Center
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column {
+                Row {
+                    OutlinedTextField(
+                        value = targetSizeKb,
+                        onValueChange = { targetSizeKb = it },
+                        label = { Text("Размер (КБ)") },
+                        singleLine = true,
+                        modifier = Modifier.width(150.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(16.dp))
+
+                    OutlinedTextField(
+                        value = targetWidth,
+                        onValueChange = { targetWidth = it },
+                        label = { Text("Ширина (px)") },
+                        singleLine = true,
+                        modifier = Modifier.width(150.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(70.dp)) // Вертикальное пространство
+
                 Button(onClick = {
                     val files = chooseImages()
                     if (files.isNotEmpty()) {
@@ -132,12 +157,16 @@ fun App() {
                             errorMessage = "Не выбраны фотографии для обработки."
                         } else if (saveFolder == null) {
                             errorMessage = "Не выбрана папка для сохранения."
+                        } else if (targetWidth.toIntOrNull() == null || targetSizeKb.toIntOrNull() == null) {
+                            errorMessage = "Некорректные значения для ширины или размера."
                         } else {
                             isProcessing = true
                             CoroutineScope(Dispatchers.Default).launch {
                                 processImages(
                                     selectedImages,
                                     saveFolder!!,
+                                    targetSizeKb = targetSizeKb.toInt(),
+                                    targetWidth = targetWidth.toInt(),
                                     onProgress = { p ->
                                         progress = p
                                     },
