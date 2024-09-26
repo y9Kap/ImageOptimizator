@@ -15,10 +15,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Image
@@ -59,7 +56,7 @@ fun compressImage(inputFile: File, outputFile: File, targetSizeKb: Int = 120, ta
         writer.output = ImageIO.createImageOutputStream(baos)
         writer.write(null, IIOImage(resizedImage, null, null), param)
         compressed = baos.toByteArray()
-        quality -= 0.005f
+        quality -= 0.001f
     } while (compressed!!.size > targetSizeKb * 1024 && quality > 0)
     outputFile.writeBytes(compressed)
 }
@@ -69,18 +66,19 @@ suspend fun processImages(
     saveFolder: File,
     targetSizeKb: Int = 120,
     targetWidth: Int = 640,
-    onProgress: (Float) -> Unit,
     onError: (String) -> Unit
 ) {
-    try {
-        files.forEachIndexed { index, file ->
-            val outputFile = File(saveFolder, "compressed_${file.name}")
-            compressImage(file, outputFile, targetSizeKb, targetWidth)
-            onProgress((index + 1).toFloat() / files.size)
-            delay(200)
-        }
-    } catch (e: Exception) {
-        onError("Ошибка при обработке файлов: ${e.message}")
+    coroutineScope {
+        files.mapIndexed { _, file ->
+            async(Dispatchers.IO) {
+                try {
+                    val outputFile = File(saveFolder, "compressed_${file.name}")
+                    compressImage(file, outputFile, targetSizeKb, targetWidth)
+                } catch (e: Exception) {
+                    onError("Ошибка при обработке файла ${file.name}: ${e.message}")
+                }
+            }
+        }.awaitAll()
     }
 }
 
@@ -106,7 +104,6 @@ fun App() {
     var message by remember { mutableStateOf("Выберите фотографии и папку для сохранения.") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf(0f) }
 
     val (initialWidth, initialSizeKb) = loadConfig()
 
@@ -122,7 +119,7 @@ fun App() {
                 .padding(10.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(onTap = {
-                        focusManager.clearFocus() // Сброс фокуса при нажатии
+                        focusManager.clearFocus()
                     })
                 },
             contentAlignment = Alignment.Center
@@ -136,7 +133,7 @@ fun App() {
                         value = targetSizeKb,
                         onValueChange = {
                             targetSizeKb = it
-                            saveConfig(targetWidth, targetSizeKb) // Сохранение при изменении
+                            saveConfig(targetWidth, targetSizeKb)
                         },
                         label = { Text("Размер (КБ)") },
                         singleLine = true,
@@ -160,8 +157,8 @@ fun App() {
                 Spacer(modifier = Modifier.height(70.dp))
 
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp), // Добавляем пространство между кнопками
-                    verticalAlignment = Alignment.CenterVertically // Выравниваем кнопки по вертикали
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
                         onClick = {
@@ -218,15 +215,13 @@ fun App() {
                             errorMessage = "Некорректные значения для ширины или размера."
                         } else {
                             isProcessing = true
+                            message = "Обработка начата..."
                             CoroutineScope(Dispatchers.Default).launch {
-                                processImages(
+                                 processImages(
                                     selectedImages,
                                     saveFolder!!,
                                     targetSizeKb = targetSizeKb.toInt(),
                                     targetWidth = targetWidth.toInt(),
-                                    onProgress = { p ->
-                                        progress = p
-                                    },
                                     onError = { error ->
                                         errorMessage = error
                                         isProcessing = false
@@ -244,17 +239,7 @@ fun App() {
                 ) {
                     Text("Запустить обработку")
                 }
-
-                if (isProcessing) {
-                    LinearProgressIndicator(
-                        progress = progress,
-                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-                    )
-                    BasicText("Обработка: ${(progress * 100).toInt()}%", modifier = Modifier.padding(top = 8.dp))
-                } else {
-                    BasicText(text = message, modifier = Modifier.padding(top = 16.dp))
-                }
-
+                BasicText(text = message, modifier = Modifier.padding(top = 16.dp))
                 errorMessage?.let { error ->
                     ErrorDialog(errorMessage = error) {
                         errorMessage = null
@@ -318,7 +303,7 @@ fun saveConfig(targetWidth: String, targetSizeKb: String) {
 
 fun loadConfig(): Pair<String, String> {
     val configFile = File("config.properties")
-    if (!configFile.exists()) return "640" to "120" // Значения по умолчанию
+    if (!configFile.exists()) return "640" to "120"
 
     val properties = Properties().apply {
         load(configFile.inputStream())
