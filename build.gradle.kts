@@ -32,7 +32,7 @@ compose.desktop {
             }
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ImageOptimizator"
-            packageVersion = "1.6.0"
+            packageVersion = "1.7.0"
         }
     }
 }
