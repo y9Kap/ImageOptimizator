@@ -1,4 +1,5 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.*
@@ -6,17 +7,25 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Image
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.*
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
@@ -98,21 +107,37 @@ fun App() {
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0f) }
-    var targetWidth by rememberSaveable { mutableStateOf("640") }
-    var targetSizeKb by rememberSaveable { mutableStateOf("120") }
+
+    val (initialWidth, initialSizeKb) = loadConfig()
+
+    var targetWidth by rememberSaveable { mutableStateOf(initialWidth) }
+    var targetSizeKb by rememberSaveable { mutableStateOf(initialSizeKb) }
+
+    val focusManager = LocalFocusManager.current
 
     MaterialTheme {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(10.dp),
+                .padding(10.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = {
+                        focusManager.clearFocus() // Сброс фокуса при нажатии
+                    })
+                },
             contentAlignment = Alignment.Center
         ) {
-            Column {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 Row {
                     OutlinedTextField(
                         value = targetSizeKb,
-                        onValueChange = { targetSizeKb = it },
+                        onValueChange = {
+                            targetSizeKb = it
+                            saveConfig(targetWidth, targetSizeKb) // Сохранение при изменении
+                        },
                         label = { Text("Размер (КБ)") },
                         singleLine = true,
                         modifier = Modifier.width(150.dp)
@@ -122,32 +147,69 @@ fun App() {
 
                     OutlinedTextField(
                         value = targetWidth,
-                        onValueChange = { targetWidth = it },
+                        onValueChange = {
+                            targetWidth = it
+                            saveConfig(targetWidth, targetSizeKb)
+                        },
                         label = { Text("Ширина (px)") },
                         singleLine = true,
                         modifier = Modifier.width(150.dp)
                     )
                 }
 
-                Spacer(modifier = Modifier.height(70.dp)) // Вертикальное пространство
+                Spacer(modifier = Modifier.height(70.dp))
 
-                Button(onClick = {
-                    val files = chooseImages()
-                    if (files.isNotEmpty()) {
-                        selectedImages = files
-                        message = "Выбрано ${files.size} фотографий."
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp), // Добавляем пространство между кнопками
+                    verticalAlignment = Alignment.CenterVertically // Выравниваем кнопки по вертикали
+                ) {
+                    Button(
+                        onClick = {
+                            val files = chooseImages()
+                            if (files.isNotEmpty()) {
+                                selectedImages = files
+                                message = "Выбрано ${files.size} фотографий."
+                            }
+                        },
+                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                    ) {
+                        Text("Выбрать фотографии")
                     }
-                }) {
-                    Text("Выбрать фотографии")
+
+                    Button(
+                        onClick = {
+                            val folder = chooseImageFolder()
+                            if (folder != null) {
+                                val imageFiles = folder.listFiles { _, name ->
+                                    name.endsWith(".jpg") || name.endsWith(".jpeg")
+                                }?.toList() ?: emptyList()
+
+                                if (imageFiles.isNotEmpty()) {
+                                    selectedImages = imageFiles
+                                    message = "Выбрана папка с ${imageFiles.size} фотографиями."
+                                } else {
+                                    message = "В папке нет фотографий."
+                                }
+                            }
+                        },
+                        modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+                    ) {
+                        Text("Выбрать папку с фотографиями")
+                    }
                 }
 
-                Button(onClick = {
-                    val folder = chooseFolder()
-                    if (folder != null) {
-                        saveFolder = folder
-                        message = "Выбрана папка для сохранения: ${folder.path}."
-                    }
-                }, modifier = Modifier.padding(top = 8.dp)) {
+                Button(
+                    onClick = {
+                        val folder = chooseFolder()
+                        if (folder != null) {
+                            saveFolder = folder
+                            message = "Выбрана папка для сохранения: ${folder.path}."
+                        }
+                    },
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .pointerHoverIcon(PointerIcon.Hand)
+                ) {
                     Text("Выбрать папку для сохранения")
                 }
 
@@ -181,7 +243,9 @@ fun App() {
                         }
                     },
                     enabled = !isProcessing,
-                    modifier = Modifier.padding(top = 8.dp)
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .pointerHoverIcon(PointerIcon.Hand)
                 ) {
                     Text("Запустить обработку")
                 }
@@ -226,6 +290,42 @@ fun chooseFolder(): File? {
     } else {
         null
     }
+}
+
+fun chooseImageFolder(): File? {
+    val chooser = JFileChooser().apply {
+        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+        dialogTitle = "Выберите папку с фотографиями"
+    }
+    val result = chooser.showOpenDialog(null)
+    return if (result == JFileChooser.APPROVE_OPTION) {
+        chooser.selectedFile
+    } else {
+        null
+    }
+}
+
+fun saveConfig(targetWidth: String, targetSizeKb: String) {
+    val properties = Properties()
+    properties["targetWidth"] = targetWidth
+    properties["targetSizeKb"] = targetSizeKb
+
+    val configFile = File("config.properties")
+    configFile.outputStream().use { properties.store(it, null) }
+}
+
+fun loadConfig(): Pair<String, String> {
+    val configFile = File("config.properties")
+    if (!configFile.exists()) return "640" to "120" // Значения по умолчанию
+
+    val properties = Properties().apply {
+        load(configFile.inputStream())
+    }
+
+    val targetWidth = properties.getProperty("targetWidth", "640")
+    val targetSizeKb = properties.getProperty("targetSizeKb", "120")
+
+    return targetWidth to targetSizeKb
 }
 
 fun main() = application {
