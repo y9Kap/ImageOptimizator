@@ -178,22 +178,17 @@ fun App() {
 
                     Button(
                         onClick = {
-                            val folder = chooseImageFolder()
-                            if (folder != null) {
-                                val imageFiles = folder.listFiles { _, name ->
-                                    name.endsWith(".jpg") || name.endsWith(".jpeg")
-                                }?.toList() ?: emptyList()
-
-                                if (imageFiles.isNotEmpty()) {
-                                    selectedImages = imageFiles
-                                    message = "Выбрана папка с ${imageFiles.size} фотографиями."
-                                } else {
-                                    message = "В папке нет фотографий."
-                                }
+                            val imageFiles = chooseImageFolder()
+                            if (!imageFiles.isNullOrEmpty()) {
+                                selectedImages = imageFiles
+                                message = "Выбрана папка с ${imageFiles.size} фотографиями."
+                            } else {
+                                message = "В папке нет фотографий."
                             }
                         },
                         modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
-                    ) {
+                    )
+                    {
                         Text("Выбрать папку с фотографиями")
                     }
                 }
@@ -292,18 +287,25 @@ fun chooseFolder(): File? {
     }
 }
 
-fun chooseImageFolder(): File? {
+fun chooseImageFolder(): List<File>? {
     val chooser = JFileChooser().apply {
         fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
         dialogTitle = "Выберите папку с фотографиями"
     }
+
     val result = chooser.showOpenDialog(null)
     return if (result == JFileChooser.APPROVE_OPTION) {
-        chooser.selectedFile
+        val selectedFolder = chooser.selectedFile
+
+        selectedFolder.listFiles { _, name ->
+            name.endsWith(".jpg", ignoreCase = true) ||
+                    name.endsWith(".jpeg", ignoreCase = true)
+        }?.toList()
     } else {
         null
     }
 }
+
 
 fun saveConfig(targetWidth: String, targetSizeKb: String) {
     val properties = Properties()
