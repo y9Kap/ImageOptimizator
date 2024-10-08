@@ -15,34 +15,74 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import com.drew.imaging.ImageMetadataReader
-import com.drew.metadata.MetadataException
-import com.drew.metadata.exif.ExifIFD0Directory
 import kotlinx.coroutines.*
 import java.awt.FileDialog
 import java.awt.Frame
+import java.awt.Graphics2D
 import java.awt.Image
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.*
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
 import javax.imageio.ImageWriter
 import javax.swing.JFileChooser
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
-import java.awt.Graphics2D
-import kotlin.math.abs
 
 fun getImageOrientation(inputFile: File): Int {
-    val metadata = ImageMetadataReader.readMetadata(inputFile)
-    val exifDir = metadata.getFirstDirectoryOfType(ExifIFD0Directory::class.java)
-    return try {
-        exifDir?.getInt(ExifIFD0Directory.TAG_ORIENTATION) ?: 1
-    } catch (e: MetadataException) {
-        1
+    RandomAccessFile(inputFile, "r").use { file ->
+        val buffer = ByteArray(2)
+
+        file.read(buffer)
+        if (buffer[0] != 0xFF.toByte() || buffer[1] != 0xD8.toByte()) {
+            return 1
+        }
+
+        while (true) {
+            file.read(buffer)
+            if (buffer[0] != 0xFF.toByte()) return 1
+            if (buffer[1] == 0xE1.toByte()) {
+                file.skipBytes(2)
+                val exifHeader = ByteArray(6)
+                file.read(exifHeader)
+                if (!exifHeader.contentEquals("Exif\u0000\u0000".toByteArray())) {
+                    return 1
+                }
+                val tiffHeader = ByteArray(8)
+                file.read(tiffHeader)
+                val isLittleEndian = tiffHeader[0] == 0x49.toByte() && tiffHeader[1] == 0x49.toByte()
+
+                val numEntries = readShort(file, isLittleEndian)
+                for (i in 0 until numEntries) {
+                    val tag = readShort(file, isLittleEndian)
+                    if (tag == 274.toShort()) {
+                        file.skipBytes(6)
+                        return readShort(file, isLittleEndian).toInt()
+                    } else {
+                        file.skipBytes(10)
+                    }
+                }
+                return 1
+            } else {
+                val length = file.readUnsignedShort()
+                file.skipBytes(length - 2)
+            }
+        }
+    }
+}
+
+fun readShort(file: RandomAccessFile, isLittleEndian: Boolean): Short {
+    val buffer = ByteArray(2)
+    file.read(buffer)
+    return if (isLittleEndian) {
+        ((buffer[1].toInt() and 0xFF) shl 8 or (buffer[0].toInt() and 0xFF)).toShort()
+    } else {
+        ((buffer[0].toInt() and 0xFF) shl 8 or (buffer[1].toInt() and 0xFF)).toShort()
     }
 }
 
@@ -101,7 +141,11 @@ fun rotateImage(image: BufferedImage, orientation: Int): BufferedImage {
 
 fun compressImage(inputFile: File, outputFile: File, targetSizeKb: Int = 120, targetWidth: Int = 640) {
     val originalImage: BufferedImage = ImageIO.read(inputFile)
-    val orientation = getImageOrientation(inputFile)
+    val orientation = try {
+        getImageOrientation(inputFile)
+    } catch (e: Throwable) {
+        1
+    }
 
     val image = rotateImage(originalImage, orientation)
     val resizedImage = resizeImage(image, targetWidth)
