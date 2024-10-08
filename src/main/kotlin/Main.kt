@@ -57,7 +57,20 @@ fun resizeImage(image: BufferedImage, targetWidth: Int): BufferedImage {
     return resizedImage
 }
 
-fun rotateImage(image: BufferedImage, angle: Double, mirror: Boolean): BufferedImage {
+fun rotateImage(image: BufferedImage, orientation: Int): BufferedImage {
+
+    val (angle, mirror) = when (orientation) {
+        1 -> 0.0 to false
+        2 -> 0.0 to true
+        3 -> 180.0 to false
+        4 -> 0.0 to true
+        5 -> 270.0 to true
+        6 -> 90.0 to false
+        7 -> 90.0 to true
+        8 -> -90.0 to false
+        else -> 0.0 to false
+    }
+
     val radians = Math.toRadians(angle)
     val sin = abs(sin(radians))
     val cos = abs(cos(radians))
@@ -78,29 +91,19 @@ fun rotateImage(image: BufferedImage, angle: Double, mirror: Boolean): BufferedI
     g2d.drawRenderedImage(image, null)
 
     g2d.dispose()
-    return transformedImage
-}
-
-fun getRotationAngleAndMirror(orientation: Int): Pair<Double, Boolean> {
-    return when (orientation) {
-        1 -> 0.0 to false
-        2 -> 0.0 to true
-        3 -> 180.0 to false
-        4 -> 0.0 to true
-        5 -> 270.0 to true
-        6 -> 90.0 to false
-        7 -> 90.0 to true
-        8 -> -90.0 to false
-        else -> 0.0 to false
+    when (orientation) {
+        4, 5, 7 -> {
+            return rotateImage(transformedImage, 3)
+        }
     }
+    return transformedImage
 }
 
 fun compressImage(inputFile: File, outputFile: File, targetSizeKb: Int = 120, targetWidth: Int = 640) {
     val originalImage: BufferedImage = ImageIO.read(inputFile)
     val orientation = getImageOrientation(inputFile)
-    val (rotationAngle, needMirror) = getRotationAngleAndMirror(orientation)
 
-    val image = rotateImage(originalImage, rotationAngle, needMirror)
+    val image = rotateImage(originalImage, orientation)
     val resizedImage = resizeImage(image, targetWidth)
     val writer: ImageWriter = ImageIO.getImageWritersByFormatName("jpg").next()
     val baos = ByteArrayOutputStream()
