@@ -15,6 +15,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import com.drew.imaging.ImageMetadataReader
+import com.drew.metadata.exif.ExifIFD0Directory
 import kotlinx.coroutines.*
 import java.awt.FileDialog
 import java.awt.Frame
@@ -28,6 +30,16 @@ import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
 import javax.imageio.ImageWriter
 import javax.swing.JFileChooser
+import kotlin.math.cos
+import kotlin.math.sin
+import java.awt.Graphics2D
+import kotlin.math.abs
+
+fun getImageOrientation(inputFile: File): Int {
+    val metadata = ImageMetadataReader.readMetadata(inputFile)
+    val exifDir = metadata.getFirstDirectoryOfType(ExifIFD0Directory::class.java)
+    return exifDir?.getInt(ExifIFD0Directory.TAG_ORIENTATION) ?: 1
+}
 
 fun resizeImage(image: BufferedImage, targetWidth: Int): BufferedImage {
     val aspectRatio = image.height.toDouble() / image.width.toDouble()
@@ -40,9 +52,40 @@ fun resizeImage(image: BufferedImage, targetWidth: Int): BufferedImage {
     return resizedImage
 }
 
+fun rotateImage(image: BufferedImage, angle: Double): BufferedImage {
+    val radians = Math.toRadians(angle)
+    val sin = abs(sin(radians))
+    val cos = abs(cos(radians))
+    val newWidth = (image.width * cos + image.height * sin).toInt()
+    val newHeight = (image.width * sin + image.height * cos).toInt()
+
+    val rotatedImage = BufferedImage(newWidth, newHeight, image.type)
+    val g2d: Graphics2D = rotatedImage.createGraphics()
+    g2d.translate((newWidth - image.width) / 2, (newHeight - image.height) / 2)
+    g2d.rotate(radians, (image.width / 2).toDouble(), (image.height / 2).toDouble())
+    g2d.drawRenderedImage(image, null)
+    g2d.dispose()
+
+    return rotatedImage
+}
+
+fun getRotationAngle(orientation: Int): Double {
+    return when (orientation) {
+        1, 2 -> 0.0
+        3, 4 -> 180.0
+        5, 7 -> -90.0
+        6, 8 -> 90.0
+        else -> 0.0
+    }
+}
+
 fun compressImage(inputFile: File, outputFile: File, targetSizeKb: Int = 120, targetWidth: Int = 640) {
     val originalImage: BufferedImage = ImageIO.read(inputFile)
-    val resizedImage = resizeImage(originalImage, targetWidth)
+    val orientation = getImageOrientation(inputFile)
+    val rotationAngle = getRotationAngle(orientation)
+
+    val image = rotateImage(originalImage, rotationAngle)
+    val resizedImage = resizeImage(image, targetWidth)
     val writer: ImageWriter = ImageIO.getImageWritersByFormatName("jpg").next()
     val baos = ByteArrayOutputStream()
     var quality = 1.0f
@@ -69,13 +112,15 @@ suspend fun processImages(
     onError: (String) -> Unit
 ) {
     coroutineScope {
-        files.mapIndexed { _, file ->
+        files.map { file ->
             async(Dispatchers.IO) {
                 try {
-                    val outputFile = File(saveFolder, "compressed_${file.name}")
+                    val outputFile = File(saveFolder, "${file.nameWithoutExtension}.jpg")
                     compressImage(file, outputFile, targetSizeKb, targetWidth)
                 } catch (e: Exception) {
                     onError("Ошибка при обработке файла ${file.name}: ${e.message}")
+                    saveFolder.listFiles()?.forEach { it.delete() }
+                    return@async
                 }
             }
         }.awaitAll()
@@ -96,6 +141,29 @@ fun ErrorDialog(errorMessage: String, onDismiss: () -> Unit) {
     )
 }
 
+fun restoreFileOrderInShuffledFolder(originalFolder: File, shuffledFolder: File) {
+    val originalFiles = originalFolder.listFiles()?.toList() ?: emptyList()
+    val shuffledFiles = shuffledFolder.listFiles()?.toList() ?: emptyList()
+
+    val tempFolder = File(shuffledFolder, "temp")
+    tempFolder.mkdirs()
+
+    originalFiles.forEach { originalFile ->
+        val shuffledFile = shuffledFiles.find { it.nameWithoutExtension == originalFile.nameWithoutExtension }
+
+        shuffledFile?.renameTo(File(tempFolder, "${shuffledFile.nameWithoutExtension}.jpg"))
+    }
+
+    shuffledFolder.listFiles()?.forEach { it.delete() }
+
+    tempFolder.listFiles()?.forEach { tempFile ->
+        val newFile = File(shuffledFolder, "${tempFile.nameWithoutExtension}.jpg")
+        tempFile.renameTo(newFile)
+    }
+
+    tempFolder.deleteRecursively()
+}
+
 @Composable
 @Preview
 fun App() {
@@ -104,6 +172,8 @@ fun App() {
     var message by remember { mutableStateOf("Выберите фотографии и папку для сохранения.") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
+
+    var saveOrder by remember { mutableStateOf(false) }
 
     val (initialWidth, initialSizeKb) = loadConfig()
 
@@ -154,7 +224,17 @@ fun App() {
                     )
                 }
 
-                Spacer(modifier = Modifier.height(70.dp))
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = saveOrder,
+                        onCheckedChange = { saveOrder = it }
+                    )
+                    Text("Сохранить порядок", modifier = Modifier.padding(start = 8.dp))
+                }
+
+                Spacer(modifier = Modifier.height(50.dp))
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -184,8 +264,7 @@ fun App() {
                             }
                         },
                         modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
-                    )
-                    {
+                    ) {
                         Text("Выбрать папку с фотографиями")
                     }
                 }
@@ -217,7 +296,7 @@ fun App() {
                             isProcessing = true
                             message = "Обработка начата..."
                             CoroutineScope(Dispatchers.Default).launch {
-                                 processImages(
+                                processImages(
                                     selectedImages,
                                     saveFolder!!,
                                     targetSizeKb = targetSizeKb.toInt(),
@@ -227,6 +306,10 @@ fun App() {
                                         isProcessing = false
                                     }
                                 )
+                                if (saveOrder) {
+                                    val originalFolder = getFirstImageDirectory(selectedImages)
+                                    restoreFileOrderInShuffledFolder(originalFolder, saveFolder!!)
+                                }
                                 isProcessing = false
                                 message = "Обработка завершена!"
                             }
@@ -270,6 +353,10 @@ fun chooseFolder(): File? {
     } else {
         null
     }
+}
+
+fun getFirstImageDirectory(files: List<File>): File {
+    return files.first().parentFile
 }
 
 fun chooseImageFolder(): List<File>? {

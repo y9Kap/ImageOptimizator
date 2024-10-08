@@ -17,6 +17,8 @@ repositories {
 
 dependencies {
     implementation(compose.desktop.currentOs)
+    implementation("com.drewnoakes:metadata-extractor:2.18.0")
+
 }
 
 compose.desktop {
@@ -28,8 +30,7 @@ compose.desktop {
             }
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ImageOptimizator"
-            packageVersion = "2.0.0"
+            packageVersion = "3.0.0"
         }
     }
 }
-
