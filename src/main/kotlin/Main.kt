@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.drew.imaging.ImageMetadataReader
+import com.drew.metadata.MetadataException
 import com.drew.metadata.exif.ExifIFD0Directory
 import kotlinx.coroutines.*
 import java.awt.FileDialog
@@ -38,7 +39,11 @@ import kotlin.math.abs
 fun getImageOrientation(inputFile: File): Int {
     val metadata = ImageMetadataReader.readMetadata(inputFile)
     val exifDir = metadata.getFirstDirectoryOfType(ExifIFD0Directory::class.java)
-    return exifDir?.getInt(ExifIFD0Directory.TAG_ORIENTATION) ?: 1
+    return try {
+        exifDir?.getInt(ExifIFD0Directory.TAG_ORIENTATION) ?: 1
+    } catch (e: MetadataException) {
+        1
+    }
 }
 
 fun resizeImage(image: BufferedImage, targetWidth: Int): BufferedImage {
@@ -52,39 +57,50 @@ fun resizeImage(image: BufferedImage, targetWidth: Int): BufferedImage {
     return resizedImage
 }
 
-fun rotateImage(image: BufferedImage, angle: Double): BufferedImage {
+fun rotateImage(image: BufferedImage, angle: Double, mirror: Boolean): BufferedImage {
     val radians = Math.toRadians(angle)
     val sin = abs(sin(radians))
     val cos = abs(cos(radians))
     val newWidth = (image.width * cos + image.height * sin).toInt()
     val newHeight = (image.width * sin + image.height * cos).toInt()
 
-    val rotatedImage = BufferedImage(newWidth, newHeight, image.type)
-    val g2d: Graphics2D = rotatedImage.createGraphics()
+    val transformedImage = BufferedImage(newWidth, newHeight, image.type)
+    val g2d: Graphics2D = transformedImage.createGraphics()
+
+    if (mirror) {
+        g2d.scale(-1.0, 1.0)
+        g2d.translate(-newWidth.toDouble(), 0.0)
+        g2d.drawRenderedImage(transformedImage, null)
+    }
+
     g2d.translate((newWidth - image.width) / 2, (newHeight - image.height) / 2)
     g2d.rotate(radians, (image.width / 2).toDouble(), (image.height / 2).toDouble())
     g2d.drawRenderedImage(image, null)
-    g2d.dispose()
 
-    return rotatedImage
+    g2d.dispose()
+    return transformedImage
 }
 
-fun getRotationAngle(orientation: Int): Double {
+fun getRotationAngleAndMirror(orientation: Int): Pair<Double, Boolean> {
     return when (orientation) {
-        1, 2 -> 0.0
-        3, 4 -> 180.0
-        5, 7 -> -90.0
-        6, 8 -> 90.0
-        else -> 0.0
+        1 -> 0.0 to false
+        2 -> 0.0 to true
+        3 -> 180.0 to false
+        4 -> 0.0 to true
+        5 -> 270.0 to true
+        6 -> 90.0 to false
+        7 -> 90.0 to true
+        8 -> -90.0 to false
+        else -> 0.0 to false
     }
 }
 
 fun compressImage(inputFile: File, outputFile: File, targetSizeKb: Int = 120, targetWidth: Int = 640) {
     val originalImage: BufferedImage = ImageIO.read(inputFile)
     val orientation = getImageOrientation(inputFile)
-    val rotationAngle = getRotationAngle(orientation)
+    val (rotationAngle, needMirror) = getRotationAngleAndMirror(orientation)
 
-    val image = rotateImage(originalImage, rotationAngle)
+    val image = rotateImage(originalImage, rotationAngle, needMirror)
     val resizedImage = resizeImage(image, targetWidth)
     val writer: ImageWriter = ImageIO.getImageWritersByFormatName("jpg").next()
     val baos = ByteArrayOutputStream()
