@@ -143,7 +143,7 @@ fun compressImage(inputFile: File, outputFile: File, targetSizeKb: Int = 120, ta
     val originalImage: BufferedImage = ImageIO.read(inputFile)
     val orientation = try {
         getImageOrientation(inputFile)
-    } catch (e: Throwable) {
+    } catch (_: Throwable) {
         1
     }
 
@@ -191,7 +191,7 @@ suspend fun processImages(
 }
 
 @Composable
-fun ErrorDialog(errorMessage: String, onDismiss: () -> Unit) {
+fun errorDialog(errorMessage: String, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Ошибка") },
@@ -229,7 +229,7 @@ fun restoreFileOrderInShuffledFolder(originalFolder: File, shuffledFolder: File)
 
 @Composable
 @Preview
-fun App() {
+fun app() {
     var selectedImages by remember { mutableStateOf<List<File>>(emptyList()) }
     var saveFolder by remember { mutableStateOf<File?>(null) }
     var message by remember { mutableStateOf("Выберите фотографии и папку для сохранения.") }
@@ -387,7 +387,7 @@ fun App() {
                 }
                 BasicText(text = message, modifier = Modifier.padding(top = 16.dp))
                 errorMessage?.let { error ->
-                    ErrorDialog(errorMessage = error) {
+                    errorDialog(errorMessage = error) {
                         errorMessage = null
                     }
                 }
@@ -471,6 +471,6 @@ fun main() = application {
         title = "ImageOptimizator",
         icon = painterResource("Logo.ico")
     ) {
-        App()
+        app()
     }
 }
