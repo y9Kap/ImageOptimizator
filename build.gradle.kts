@@ -26,7 +26,7 @@ compose.desktop {
         mainClass = "MainKt"
         nativeDistributions {
             windows {
-                iconFile.set(File("E:\\Programming\\ImageComposeOptimizator\\src\\main\\resources\\Logo.ico"))
+                iconFile.set(File("E:\\Programming\\ImageOptimizator\\src\\main\\resources\\Logo.ico"))
             }
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "ImageOptimizator"

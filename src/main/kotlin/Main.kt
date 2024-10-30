@@ -7,12 +7,15 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.*
@@ -229,7 +232,7 @@ fun restoreFileOrderInShuffledFolder(originalFolder: File, shuffledFolder: File)
 
 @Composable
 @Preview
-fun app() {
+fun optimizePhoto() {
     var selectedImages by remember { mutableStateOf<List<File>>(emptyList()) }
     var saveFolder by remember { mutableStateOf<File?>(null) }
     var message by remember { mutableStateOf("Выберите фотографии и папку для сохранения.") }
@@ -422,6 +425,32 @@ fun getFirstImageDirectory(files: List<File>): File {
     return files.first().parentFile
 }
 
+
+fun chooseFolderToConfig() {
+    val chooser = JFileChooser().apply {
+        fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+        dialogTitle = "Выберите основную папку для создания подпапок"
+    }
+
+    val result = chooser.showOpenDialog(null)
+    if (result == JFileChooser.APPROVE_OPTION) {
+        val baseDirectory = chooser.selectedFile
+        val folders = listOf("На сайт", "Оптимизированные", "Для оптимизации", "Материалы", "Другие фото")
+        
+        if (!baseDirectory.exists()) {
+            baseDirectory.mkdirs()
+        }
+        
+        for (folder in folders) {
+            val folderPath = File(baseDirectory, folder)
+            if (!folderPath.exists()) {
+                folderPath.mkdir()
+            }
+        }
+    }
+    
+}
+
 fun chooseImageFolder(): List<File>? {
     val chooser = JFileChooser().apply {
         fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
@@ -471,6 +500,114 @@ fun main() = application {
         title = "ImageOptimizator",
         icon = painterResource("Logo.ico")
     ) {
-        app()
+        mainApp()
     }
 }
+
+@Composable
+@Preview
+fun mainApp() {
+    var currentScreen by remember { mutableStateOf("main") }
+
+    MaterialTheme {
+        when (currentScreen) {
+            "main" -> mainScreen(onNavigateToOptimizer = { currentScreen = "optimizer" }, onNavigateToFolderConfig = { currentScreen = "folderConfig" })
+            "optimizer" -> optimizerScreen(onNavigateBack = { currentScreen = "main" })
+            "folderConfig" -> folderConfigScreen(onNavigateBack = { currentScreen = "main" })
+        }
+    }
+}
+
+@Composable
+fun mainScreen(onNavigateToOptimizer: () -> Unit, onNavigateToFolderConfig: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Text(
+            text = "Главный экран",
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 32.dp),
+            color = Color.Black,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold
+        )
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Button(onClick = onNavigateToOptimizer) {
+                Text("Перейти к оптимизации фотографий")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onNavigateToFolderConfig) {
+                Text("Конфигурация папок")
+            }
+        }
+    }
+}
+
+@Composable
+fun optimizerScreen(onNavigateBack: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 16.dp),
+                horizontalArrangement = Arrangement.Start
+            ) {
+                Button(onClick = onNavigateBack) {
+                    Text("Главный экран")
+                }
+            }
+            optimizePhoto()
+        }
+    }
+}
+
+@Composable
+fun folderConfigScreen(onNavigateBack: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Кнопка "Главный экран" размещена в верхней части
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = 16.dp),
+            horizontalArrangement = Arrangement.Start
+        ) {
+            Button(onClick = onNavigateBack) {
+                Text("Главный экран")
+            }
+        }
+
+        // Остальное содержимое в центре
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Button(
+                onClick = {
+                    chooseFolderToConfig()
+                },
+                modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
+            ) {
+                Text("Выберите основную папку для создания подпапок")
+            }
+        }
+    }
+}
+
