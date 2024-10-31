@@ -18,7 +18,7 @@ repositories {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation("com.drewnoakes:metadata-extractor:2.18.0")
-
+    implementation("org.apache.poi:poi-ooxml:5.3.0")
 }
 
 compose.desktop {
