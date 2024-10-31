@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.*
+import org.apache.poi.xwpf.usermodel.XWPFDocument
+import org.apache.poi.xwpf.usermodel.XWPFParagraph
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Graphics2D
@@ -26,6 +28,9 @@ import java.awt.Image
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.util.*
 import javax.imageio.IIOImage
@@ -33,6 +38,7 @@ import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
 import javax.imageio.ImageWriter
 import javax.swing.JFileChooser
+import javax.swing.JOptionPane
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -426,10 +432,10 @@ fun getFirstImageDirectory(files: List<File>): File {
 }
 
 
-fun chooseFolderToConfig() {
+fun chooseFolderToConfig(selectedImages: List<File>) {
     val chooser = JFileChooser().apply {
         fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
-        dialogTitle = "Выберите основную папку для создания подпапок"
+        dialogTitle = "Конфигурация и распределение"
     }
 
     val result = chooser.showOpenDialog(null)
@@ -447,8 +453,22 @@ fun chooseFolderToConfig() {
                 folderPath.mkdir()
             }
         }
+        val sourceFolder = getSourceFolder(selectedImages)
+        val optimizationFolder = File(baseDirectory, "Для оптимизации")
+        val otherPhotosFolder = File(baseDirectory, "Другие фото")
+        for (file in selectedImages) {
+            file.copyTo(File(optimizationFolder, file.name), overwrite = true)
+        }
+        
+        sourceFolder.listFiles()?.forEach { file ->
+            if (file.isFile && !selectedImages.contains(file)) {
+                file.copyTo(File(otherPhotosFolder, file.name), overwrite = true)
+            }
+        }
+        JOptionPane.showMessageDialog(null, "Задача выполнена успешно!", "Уведомление", JOptionPane.INFORMATION_MESSAGE)
+
+
     }
-    
 }
 
 fun chooseImageFolder(): List<File>? {
@@ -479,6 +499,11 @@ fun saveConfig(targetWidth: String, targetSizeKb: String) {
     val configFile = File("config.properties")
     configFile.outputStream().use { properties.store(it, null) }
 }
+
+fun getSourceFolder(selectedPhotos: List<File>): File {
+    return selectedPhotos[0].parentFile
+}
+
 
 fun loadConfig(): Pair<String, String> {
     val configFile = File("config.properties")
@@ -545,6 +570,8 @@ fun mainScreen(onNavigateToOptimizer: () -> Unit, onNavigateToFolderConfig: () -
             Button(onClick = onNavigateToFolderConfig) {
                 Text("Конфигурация папок")
             }
+            Spacer(modifier = Modifier.height(16.dp))
+            
         }
     }
 }
@@ -580,7 +607,6 @@ fun folderConfigScreen(onNavigateBack: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Кнопка "Главный экран" размещена в верхней части
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -592,8 +618,6 @@ fun folderConfigScreen(onNavigateBack: () -> Unit) {
                 Text("Главный экран")
             }
         }
-
-        // Остальное содержимое в центре
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -601,13 +625,51 @@ fun folderConfigScreen(onNavigateBack: () -> Unit) {
         ) {
             Button(
                 onClick = {
-                    chooseFolderToConfig()
+                    val selectedPhotos = chooseImages()
+                    
+                    chooseFolderToConfig(selectedPhotos)
                 },
                 modifier = Modifier.pointerHoverIcon(PointerIcon.Hand)
             ) {
-                Text("Выберите основную папку для создания подпапок")
+                Text("Настроить конфигурацию и распределение")
             }
         }
     }
 }
 
+fun addIndentationToDocx(filePath: String, outputFilePath: String) {
+    try {
+        FileInputStream(filePath).use { fis ->
+            val document = XWPFDocument(fis)
+
+            var lastTextParagraph: XWPFParagraph? = null 
+
+            document.paragraphs.forEachIndexed { index, paragraph ->
+                val text = paragraph.text
+                if (text.isNotBlank()) {
+                    lastTextParagraph = paragraph 
+                    if (index >= 2) {  
+                        val run = paragraph.insertNewRun(0)
+
+                        run.setText("<p>")
+                    }
+                    if (index >= 2) {
+                        paragraph.createRun().apply {
+                            setText("</p>\n")
+                        }
+                    }
+                }
+            }
+
+            lastTextParagraph?.createRun()?.apply {
+                setText("<br>")
+            }
+
+            FileOutputStream(outputFilePath).use { fos ->
+                document.write(fos)
+            }
+        }
+    } catch (e: IOException) {
+        e.printStackTrace()
+    }
+}
